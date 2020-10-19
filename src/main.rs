@@ -2,8 +2,11 @@ use clap::Clap;
 use pacaptr::dispatch::Opt;
 use pacaptr::print::{print_err, PROMPT_ERROR};
 
-#[tokio::main]
-async fn main() {
+fn main() {
+    smol::block_on(async_main());
+}
+
+async fn async_main() {
     let opt = Opt::parse();
     match opt.dispatch().await {
         Ok(n) => std::process::exit(n),

@@ -1,14 +1,14 @@
 use crate::print::*;
 use anyhow::{anyhow, Context, Result};
+use async_process::Command as Exec;
+use futures::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use futures::lock::Mutex;
+use futures::{select, try_join, StreamExt};
 pub use is_root::is_root;
 use regex::Regex;
 use std::ffi::OsStr;
 use std::io::Write;
 use std::process::Stdio;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::Command as Exec;
-use tokio::sync::Mutex;
-use tokio::{select, try_join};
 
 /// Different ways in which a command shall be dealt with.
 #[derive(Copy, Clone, Debug)]
@@ -141,7 +141,7 @@ impl<S: AsRef<OsStr> + AsRef<str>> Cmd<S> {
     }
 
     /// Helper function to write a string to a `String` and `stdout`.
-    async fn write<V, W>(s: &str, mute: bool, mut out: V, mut stdout: W) -> tokio::io::Result<()>
+    async fn write<V, W>(s: &str, mute: bool, mut out: V, mut stdout: W) -> std::io::Result<()>
     where
         V: AsyncWriteExt + Unpin,
         W: AsyncWriteExt + Unpin,
@@ -156,7 +156,7 @@ impl<S: AsRef<OsStr> + AsRef<str>> Cmd<S> {
     }
 
     /// Helper function to write a line to a `String` and `stdout`.
-    async fn writeln<V, W>(s: &str, mute: bool, out: V, stdout: W) -> tokio::io::Result<()>
+    async fn writeln<V, W>(s: &str, mute: bool, out: V, stdout: W) -> std::io::Result<()>
     where
         V: AsyncWriteExt + Unpin,
         W: AsyncWriteExt + Unpin,
@@ -178,42 +178,42 @@ impl<S: AsRef<OsStr> + AsRef<str>> Cmd<S> {
         let mut stdout_reader = child
             .stdout
             .take()
-            .map(|x| BufReader::new(x).lines())
+            .map(|x| BufReader::new(x).lines().fuse())
             .ok_or_else(|| anyhow!("Child process did not have a handle to stdout"))?;
         let mut stderr_reader = child
             .stderr
             .take()
-            .map(|x| BufReader::new(x).lines())
+            .map(|x| BufReader::new(x).lines().fuse())
             .ok_or_else(|| anyhow!("Child process did not have a handle to stderr"))?;
 
-        let code: tokio::task::JoinHandle<Result<Option<i32>>> = tokio::spawn(async move {
+        let code: smol::Task<Result<Option<i32>>> = smol::spawn(async move {
             let status = child
-                .wait()
+                .status()
                 .await
                 .context("Child process encountered an error")?;
             Ok(status.code())
         });
 
         let mut out = Vec::<u8>::new();
-        let mut stdout = tokio::io::stdout();
+        let mut stdout = futures::io::AllowStdIo::new(std::io::stdout());
 
         loop {
             select! {
-                ln = stdout_reader.next_line() => match ln? {
-                    None => break,
-                    Some(l) => Self::writeln(&l, mute, &mut out, &mut stdout).await?,
+                ln = stdout_reader.next() => match ln {
+                    Some(Err(_)) | None => break,
+                    Some(Ok(l)) => Self::writeln(&l, mute, &mut out, &mut stdout).await?,
                 },
-                ln = stderr_reader.next_line() => match ln? {
-                    None => break,
-                    Some(l) => Self::writeln(&l, mute, &mut out, &mut stdout).await?,
+                ln = stderr_reader.next() => match ln {
+                    Some(Err(_)) | None => break,
+                    Some(Ok(l)) => Self::writeln(&l, mute, &mut out, &mut stdout).await?,
                 },
-                else => continue,
+                complete => continue,
             }
         }
 
         Ok(Output {
             contents: out,
-            code: code.await.unwrap()?,
+            code: code.await.unwrap(),
         })
     }
 
@@ -228,33 +228,33 @@ impl<S: AsRef<OsStr> + AsRef<str>> Cmd<S> {
         let mut stderr_reader = child
             .stderr
             .take()
-            .map(|x| BufReader::new(x).lines())
+            .map(|x| BufReader::new(x).lines().fuse())
             .ok_or_else(|| anyhow!("Child did not have a handle to stderr"))?;
 
-        let code: tokio::task::JoinHandle<Result<Option<i32>>> = tokio::spawn(async move {
+        let code: smol::Task<Result<Option<i32>>> = smol::spawn(async move {
             let status = child
-                .wait()
+                .status()
                 .await
                 .context("Child process encountered an error")?;
             Ok(status.code())
         });
 
         let mut out = Vec::<u8>::new();
-        let mut stderr = tokio::io::stderr();
+        let mut stderr = futures::io::AllowStdIo::new(std::io::stderr());
 
         loop {
             select! {
-                ln = stderr_reader.next_line() => match ln? {
-                    None => break,
-                    Some(l) => Self::writeln(&l, mute, &mut out, &mut stderr).await?,
+                ln = stderr_reader.next() => match ln {
+                     Some(Err(_)) |None=> break,
+                    Some(Ok(l)) => Self::writeln(&l, mute, &mut out, &mut stderr).await?,
                 },
-                else => continue,
+                complete => continue,
             }
         }
 
         Ok(Output {
             contents: out,
-            code: code.await.unwrap()?,
+            code: code.await.unwrap(),
         })
     }
 
@@ -272,7 +272,7 @@ impl<S: AsRef<OsStr> + AsRef<str>> Cmd<S> {
             true
         } else {
             print_cmd(&self, PROMPT_PENDING);
-            match tokio::task::block_in_place(move || {
+            match smol::unblock(move || {
                 prompt(
                     "Proceed",
                     "[Yes/all/no]",
@@ -281,6 +281,7 @@ impl<S: AsRef<OsStr> + AsRef<str>> Cmd<S> {
                 )
                 .to_lowercase()
             })
+            .await
             .as_ref()
             {
                 // The default answer is `Yes`

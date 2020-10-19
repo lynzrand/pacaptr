@@ -17,7 +17,7 @@ pub mod unknown;
 use crate::dispatch::config::Config;
 use crate::exec::{Cmd, Mode, Output, StatusCode};
 use anyhow::Result;
-use tokio::sync::Mutex;
+use futures::lock::Mutex;
 
 /*
 macro_rules! make_pm {(

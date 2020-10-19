@@ -320,7 +320,6 @@ impl Opt {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio::test;
 
     /*
     macro_rules! make_mock_pm {
@@ -518,86 +517,98 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "should run: suy")]
-    async fn simple_syu() {
-        let opt = dbg!(Opt::parse_from(&["pacaptr", "-Syu"]));
+    fn simple_syu() {
+        smol::block_on(async {
+            let opt = dbg!(Opt::parse_from(&["pacaptr", "-Syu"]));
 
-        assert!(opt.keywords.is_empty());
-        assert!(opt.sync);
-        assert!(opt.y);
-        assert!(opt.u);
-        opt.dispatch_from(Box::new(opt.make_mock())).await.unwrap();
+            assert!(opt.keywords.is_empty());
+            assert!(opt.sync);
+            assert!(opt.y);
+            assert!(opt.u);
+            opt.dispatch_from(Box::new(opt.make_mock())).await.unwrap();
+        })
     }
 
     #[test]
     #[should_panic(expected = "should run: suy")]
-    async fn long_syu() {
-        let opt = dbg!(Opt::parse_from(&[
-            "pacaptr",
-            "--sync",
-            "--refresh",
-            "--sysupgrade"
-        ]));
+    fn long_syu() {
+        smol::block_on(async {
+            let opt = dbg!(Opt::parse_from(&[
+                "pacaptr",
+                "--sync",
+                "--refresh",
+                "--sysupgrade"
+            ]));
 
-        assert!(opt.keywords.is_empty());
-        assert!(opt.sync);
-        assert!(opt.y);
-        assert!(opt.u);
-        opt.dispatch_from(Box::new(opt.make_mock())).await.unwrap();
+            assert!(opt.keywords.is_empty());
+            assert!(opt.sync);
+            assert!(opt.y);
+            assert!(opt.u);
+            opt.dispatch_from(Box::new(opt.make_mock())).await.unwrap();
+        })
     }
 
     #[test]
     #[should_panic(expected = r#"should run: sw ["curl", "wget"]"#)]
-    async fn simple_si() {
-        let opt = dbg!(Opt::parse_from(&["pacaptr", "-Sw", "curl", "wget"]));
+    fn simple_si() {
+        smol::block_on(async {
+            let opt = dbg!(Opt::parse_from(&["pacaptr", "-Sw", "curl", "wget"]));
 
-        assert!(opt.sync);
-        assert!(opt.w);
-        opt.dispatch_from(Box::new(opt.make_mock())).await.unwrap();
+            assert!(opt.sync);
+            assert!(opt.w);
+            opt.dispatch_from(Box::new(opt.make_mock())).await.unwrap();
+        })
     }
 
     #[test]
     #[should_panic(expected = r#"should run: s ["docker"]"#)]
-    async fn other_flags() {
-        let opt = dbg!(Opt::parse_from(&[
-            "pacaptr", "-S", "--dryrun", "--yes", "docker", "--cask"
-        ]));
+    fn other_flags() {
+        smol::block_on(async {
+            let opt = dbg!(Opt::parse_from(&[
+                "pacaptr", "-S", "--dryrun", "--yes", "docker", "--cask"
+            ]));
 
-        assert!(opt.sync);
-        assert!(opt.dry_run);
-        assert!(opt.no_confirm);
-        assert!(opt.force_cask);
-        opt.dispatch_from(Box::new(opt.make_mock())).await.unwrap();
+            assert!(opt.sync);
+            assert!(opt.dry_run);
+            assert!(opt.no_confirm);
+            assert!(opt.force_cask);
+            opt.dispatch_from(Box::new(opt.make_mock())).await.unwrap();
+        })
     }
 
     #[test]
     #[should_panic(expected = r#"should run: s ["docker", "--proxy=localhost:1234"]"#)]
-    async fn extra_flags() {
-        let opt = dbg!(Opt::parse_from(&[
-            "pacaptr",
-            "-S",
-            "--yes",
-            "docker",
-            "--",
-            "--proxy=localhost:1234"
-        ]));
+    fn extra_flags() {
+        smol::block_on(async {
+            let opt = dbg!(Opt::parse_from(&[
+                "pacaptr",
+                "-S",
+                "--yes",
+                "docker",
+                "--",
+                "--proxy=localhost:1234"
+            ]));
 
-        assert!(opt.sync);
-        assert!(opt.no_confirm);
-        let mut flags = opt.extra_flags.iter();
-        assert_eq!(flags.next(), Some(&String::from("--proxy=localhost:1234")));
-        assert_eq!(flags.next(), None);
-        opt.dispatch_from(Box::new(opt.make_mock())).await.unwrap();
+            assert!(opt.sync);
+            assert!(opt.no_confirm);
+            let mut flags = opt.extra_flags.iter();
+            assert_eq!(flags.next(), Some(&String::from("--proxy=localhost:1234")));
+            assert_eq!(flags.next(), None);
+            opt.dispatch_from(Box::new(opt.make_mock())).await.unwrap();
+        })
     }
 
     #[test]
     #[should_panic(expected = "exactly 1 operation expected")]
-    async fn too_many_ops() {
-        let opt = dbg!(Opt::parse_from(&["pacaptr", "-SQns", "docker", "--cask"]));
+    fn too_many_ops() {
+        smol::block_on(async {
+            let opt = dbg!(Opt::parse_from(&["pacaptr", "-SQns", "docker", "--cask"]));
 
-        assert!(opt.sync);
-        assert!(opt.query);
-        assert!(opt.n);
-        assert_eq!(opt.s, 1);
-        opt.dispatch_from(Box::new(opt.make_mock())).await.unwrap();
+            assert!(opt.sync);
+            assert!(opt.query);
+            assert!(opt.n);
+            assert_eq!(opt.s, 1);
+            opt.dispatch_from(Box::new(opt.make_mock())).await.unwrap();
+        })
     }
 }
